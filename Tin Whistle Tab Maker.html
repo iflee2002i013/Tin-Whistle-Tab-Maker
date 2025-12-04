@@ -362,29 +362,27 @@
                       return (
                         <div key={tokenIdx} className="flex flex-col items-center group relative min-w-[2em]">
                           {/* Jianpu Number */}
-                          <div className="font-bold font-serif mb-2 relative">
+                          <div className="font-bold font-serif mb-4 relative pb-2">
                             {token.octave === 'high' && (
                               <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-slate-800"></div>
                             )}
                             
                             {/* Accidental Display */}
-                            <span className="text-slate-800 relative">
+                            <span className="text-slate-800 relative inline-block">
                                 {token.accidental && (
                                     <span className="absolute -left-3 top-0 text-xs scale-75 font-normal opacity-80">
                                         {token.accidental}
                                     </span>
                                 )}
-                                <span className={token.duration > 0 ? 'relative inline-block' : ''}>
-                                  {token.val}
-                                  {/* Duration underlines */}
-                                  {token.duration > 0 && (
-                                    <span className="absolute bottom-0 left-0 right-0 flex flex-col gap-[1px]">
-                                      {[...Array(token.duration)].map((_, idx) => (
-                                        <span key={idx} className="block h-[1.5px] bg-slate-800"></span>
-                                      ))}
-                                    </span>
-                                  )}
-                                </span>
+                                {token.val}
+                                {/* Duration underlines */}
+                                {token.duration > 0 && (
+                                  <span className="absolute -bottom-2 left-0 right-0 flex flex-col gap-[2px]">
+                                    {[...Array(token.duration)].map((_, idx) => (
+                                      <span key={idx} className="block h-[2px] bg-slate-800"></span>
+                                    ))}
+                                  </span>
+                                )}
                             </span>
                             
                             {token.octave === 'low' && (
