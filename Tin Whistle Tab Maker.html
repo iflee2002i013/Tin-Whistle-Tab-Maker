@@ -61,8 +61,8 @@
 
     const WhistleTabMaker = () => {
       // Default song: Down by the Salley Gardens (Fragment)
-      const defaultText = `1 2 3 5/ 6/ | 1+ 6 5 - |
-3 1 2 3/ 5/ | 6 5 - - |
+      const defaultText = `1 2 3 5/ 6/ | 1+ 6 5 - | (3 3)
+3 1 2 3/ 5/ | 6 5 - - | (3 ~ 3)
 1+ 6 5 3 | 1 2 3/ 5/ | 6 5 - - |`;
 
       const [input, setInput] = useState(defaultText);
@@ -192,8 +192,11 @@
     const lines = text.split('\n');
     return lines.map((line) => {
       const tokens = line.trim().split(/\s+/);
-      return tokens.map(token => {
-        if (!token) return null;
+      const parsedTokens = [];
+      let inSlur = false;
+      
+      tokens.forEach(token => {
+        if (!token) return;
         
         let note = null;
         let octave = 'middle';
@@ -202,35 +205,59 @@
         let isSustain = false;
         let duration = 0; // Number of slashes for rhythm notation
         
-        const cleanToken = token.trim();
+        let cleanToken = token.trim();
         
-        if (cleanToken === '0') return { type: 'rest' };
-        if (cleanToken === '-' || cleanToken === '~') return { type: 'sustain' };
-        if (cleanToken === '|') return { type: 'barline' };
-
-        // Enhanced Regex: (accidental)(note)(accidental)(modifiers)(slashes)
-        // Matches: 1, 1+, 1#, #1, 7b, b7, 5/, 5//, 5///
-        const match = cleanToken.match(/^([#b]?)?([1-7])([#b]?)?([+'_]*)?(\/{0,3})?$/);
+        // Check for slur markers (parentheses)
+        const startsSlur = cleanToken.startsWith('(');
+        const endsSlur = cleanToken.endsWith(')');
         
-        if (match) {
-          const preAcc = match[1];
-          const val = match[2];
-          const postAcc = match[3];
-          const mods = match[4] || '';
-          const slashes = match[5] || '';
-          
-          note = val;
-          accidental = preAcc || postAcc || null;
-          duration = slashes.length; // 0=quarter note, 1=eighth, 2=sixteenth, 3=thirty-second
-          
-          if (mods.includes('+') || mods.includes("'")) octave = 'high';
-          else if (mods.includes('_')) octave = 'low';
-          
-          return { type: 'note', val: note, octave, accidental, duration, original: token };
+        // Remove parentheses for parsing
+        cleanToken = cleanToken.replace(/[()]/g, '');
+        
+        if (!cleanToken) {
+          // Handle standalone parentheses
+          if (startsSlur) parsedTokens.push({ type: 'slur-start' });
+          if (endsSlur) parsedTokens.push({ type: 'slur-end' });
+          return;
         }
         
-        return { type: 'text', content: token };
-      }).filter(Boolean);
+        if (startsSlur) parsedTokens.push({ type: 'slur-start' });
+        
+        if (cleanToken === '0') {
+          parsedTokens.push({ type: 'rest' });
+        } else if (cleanToken === '-' || cleanToken === '~') {
+          parsedTokens.push({ type: 'sustain' });
+        } else if (cleanToken === '|') {
+          parsedTokens.push({ type: 'barline' });
+        } else {
+          // Enhanced Regex: (accidental)(note)(accidental)(modifiers)(slashes)
+          // Matches: 1, 1+, 1#, #1, 7b, b7, 5/, 5//, 5///
+          const match = cleanToken.match(/^([#b]?)?([1-7])([#b]?)?([+'_]*)?(\/{0,3})?$/);
+          
+          if (match) {
+            const preAcc = match[1];
+            const val = match[2];
+            const postAcc = match[3];
+            const mods = match[4] || '';
+            const slashes = match[5] || '';
+            
+            note = val;
+            accidental = preAcc || postAcc || null;
+            duration = slashes.length; // 0=quarter note, 1=eighth, 2=sixteenth, 3=thirty-second
+            
+            if (mods.includes('+') || mods.includes("'")) octave = 'high';
+            else if (mods.includes('_')) octave = 'low';
+            
+            parsedTokens.push({ type: 'note', val: note, octave, accidental, duration, original: token });
+          } else {
+            parsedTokens.push({ type: 'text', content: cleanToken });
+          }
+        }
+        
+        if (endsSlur) parsedTokens.push({ type: 'slur-end' });
+      });
+      
+      return parsedTokens.filter(Boolean);
     });
   };
 
@@ -321,6 +348,7 @@
                 <li><code className="bg-white px-1 border rounded">+</code> : 高音 (例如: 1+)</li>
                 <li><code className="bg-white px-1 border rounded">#</code> / <code className="bg-white px-1 border rounded">b</code> : 升降 (例如: 4# 或 7b)</li>
                 <li><code className="bg-white px-1 border rounded">/</code> : 时值 (例如: 5/ 八分, 5// 十六分, 5/// 三十二分)</li>
+                <li><code className="bg-white px-1 border rounded">()</code> : 连音线 (例如: (3 5) 表示连音)</li>
                 <li><code className="bg-white px-1 border rounded">|</code> : 小节分隔符</li>
                 <li><code className="bg-white px-1 border rounded">0</code> : 休止符 | <code className="bg-white px-1 border rounded">~</code> : 延音</li>
               </ul>
@@ -396,9 +424,33 @@
                 fontSize === 'small' ? 'text-base' : 
                 fontSize === 'large' ? 'text-2xl' : 'text-xl'
               }`}>
-              {parsedLines.map((line, lineIdx) => (
-                <div key={lineIdx} className="flex flex-wrap items-end gap-x-2 gap-y-8 mb-6 leading-none">
+              {parsedLines.map((line, lineIdx) => {
+                // Track slur groups - collect notes that are in slur
+                let slurGroups = [];
+                let currentSlurGroup = null;
+                
+                line.forEach((token, idx) => {
+                  if (token.type === 'slur-start') {
+                    currentSlurGroup = { start: idx, notes: [] };
+                  } else if (token.type === 'slur-end') {
+                    if (currentSlurGroup) {
+                      currentSlurGroup.end = idx;
+                      slurGroups.push(currentSlurGroup);
+                      currentSlurGroup = null;
+                    }
+                  } else if (token.type === 'note' && currentSlurGroup) {
+                    currentSlurGroup.notes.push(idx);
+                  }
+                });
+                
+                return (
+                <div key={lineIdx} className="flex flex-wrap items-end gap-x-2 gap-y-8 mb-6 leading-none relative">
                   {line.map((token, tokenIdx) => {
+                    
+                    // Handle slur markers
+                    if (token.type === 'slur-start' || token.type === 'slur-end') {
+                      return null;
+                    }
                     
                     if (token.type === 'note') {
                       const holes = getFingering(token);
@@ -413,8 +465,38 @@
                       // 如果与相邻音符时值相同，减小间距
                       const spacingClass = (hasSameDurationBefore || hasSameDurationAfter) ? '-mx-1' : '';
                       
+                      // Check if this note is the first note in a slur group
+                      let slurInfo = null;
+                      slurGroups.forEach(group => {
+                        if (group.notes[0] === tokenIdx && group.notes.length > 1) {
+                          // This is the first note, draw slur covering all notes in group
+                          const firstIdx = group.notes[0];
+                          const lastIdx = group.notes[group.notes.length - 1];
+                          const totalDistance = lastIdx - firstIdx;
+                          const noteCount = group.notes.length;
+                          slurInfo = { totalDistance, noteCount };
+                        }
+                      });
+                      
                       return (
                         <div key={tokenIdx} className={`flex flex-col items-center group relative min-w-[2em] ${spacingClass}`}>
+                          {/* Slur arc - only render on first note of group */}
+                          {slurInfo && (
+                            <div 
+                              className="absolute pointer-events-none"
+                              style={{
+                                top: '-8px',
+                                left: '30%',
+                                width: `calc(${slurInfo.totalDistance * 2}em + ${slurInfo.totalDistance *5}px + 1em)`,
+                                height: '30px',
+                                borderTop: '2px solid rgb(71, 85, 105)',
+                                borderRadius: '50% 50% 0 0',
+                                transform: 'translateX(-50%) translateY(-4px)',
+                                marginLeft: `calc(${slurInfo.totalDistance * 1.25}em + ${slurInfo.totalDistance * 4}px)`
+                              }}
+                            />
+                          )}
+                          
                           {/* Jianpu Number */}
                           <div className="font-bold font-mono mb-5 relative pb-3">
                             {token.octave === 'high' && (
@@ -512,7 +594,8 @@
                     )
                   })}
                 </div>
-              ))}
+                );
+              })}
 
               {parsedLines.length === 0 || (parsedLines.length === 1 && parsedLines[0].length === 0) ? (
                  <div className="text-center text-slate-300 italic mt-20">
