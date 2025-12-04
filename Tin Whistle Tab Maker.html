@@ -144,6 +144,49 @@
     return noteVal;
   };
 
+  // Get the note name (pitch letter) based on the note value and key
+  const getNoteName = (token) => {
+    // D Major scale mapping (D whistle default)
+    const dMajorScale = {
+      '1': 'D', '1#': 'D♯', '2': 'E', '2#': 'F', '3': 'F♯',
+      '4': 'G', '4#': 'G♯', '5': 'A', '5#': 'B♭', '6': 'B', '7b': 'C', '7': 'C♯'
+    };
+
+    let noteVal = token.val;
+    let acc = token.accidental;
+
+    // Apply explicit accidentals first
+    if (acc === '#') noteVal = noteVal + '#';
+    else if (acc === 'b') {
+      if (noteVal === '7') noteVal = '7b';
+      else if (noteVal === '3') noteVal = '2#';
+      else noteVal = noteVal + '#';
+    } else {
+      // Apply key signature modifications
+      noteVal = getKeyModifiedNote(noteVal, selectedKey);
+    }
+
+    // Get base note name from D Major scale
+    let noteName = dMajorScale[noteVal] || dMajorScale[token.val] || 'D';
+    
+    // Adjust for different keys
+    if (selectedKey === 'G') {
+      // G Major: 1=G, 2=A, 3=B, 4=C, 5=D, 6=E, 7=F#
+      const gMajorMap = {'1': 'G', '2': 'A', '3': 'B', '4': 'C', '5': 'D', '6': 'E', '7': 'F♯', '7b': 'F'};
+      noteName = gMajorMap[token.val + (acc || '')] || gMajorMap[token.val] || noteName;
+    } else if (selectedKey === 'A') {
+      // A Major: 1=A, 2=B, 3=C#, 4=D, 5=E, 6=F#, 7=G#
+      const aMajorMap = {'1': 'A', '2': 'B', '3': 'C♯', '4': 'D', '4#': 'D♯', '5': 'E', '6': 'F♯', '7': 'G♯'};
+      noteName = aMajorMap[noteVal] || aMajorMap[token.val] || noteName;
+    } else if (selectedKey === 'C') {
+      // C Major: 1=C, 2=D, 3=E, 4=F, 5=G, 6=A, 7=B
+      const cMajorMap = {'1': 'C', '2': 'D', '2#': 'D♯', '3': 'E', '4': 'F', '5': 'G', '6': 'A', '7': 'B', '7b': 'B♭'};
+      noteName = cMajorMap[noteVal] || cMajorMap[token.val] || noteName;
+    }
+
+    return noteName;
+  };
+
   // Parser Logic
   const parseNotes = (text) => {
     const lines = text.split('\n');
@@ -359,6 +402,7 @@
                     
                     if (token.type === 'note') {
                       const holes = getFingering(token);
+                      const noteName = getNoteName(token);
                       
                       // 检查是否与前一个音符时值相同（用于连接下划线）
                       const prevToken = tokenIdx > 0 ? line[tokenIdx - 1] : null;
@@ -423,6 +467,15 @@
                                 )}
                               </div>
                             ))}
+                          </div>
+                          
+                          {/* Note Name (Pitch) - Below fingering */}
+                          <div className={`text-emerald-600 font-sans italic mt-1 ${
+                            fontSize === 'small' ? 'text-xs' : fontSize === 'large' ? 'text-sm' : 'text-xs'
+                          }`}>
+                            {noteName}
+                            {token.octave === 'high' && <span className="text-[0.7em]">′</span>}
+                            {token.octave === 'low' && <span className="text-[0.7em] opacity-60">₀</span>}
                           </div>
                         </div>
                       );
