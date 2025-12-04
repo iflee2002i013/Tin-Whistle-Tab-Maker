@@ -359,10 +359,20 @@
                     
                     if (token.type === 'note') {
                       const holes = getFingering(token);
+                      
+                      // 检查是否与前一个音符时值相同（用于连接下划线）
+                      const prevToken = tokenIdx > 0 ? line[tokenIdx - 1] : null;
+                      const nextToken = tokenIdx < line.length - 1 ? line[tokenIdx + 1] : null;
+                      const hasSameDurationBefore = prevToken?.type === 'note' && prevToken.duration > 0 && prevToken.duration === token.duration;
+                      const hasSameDurationAfter = nextToken?.type === 'note' && nextToken.duration > 0 && nextToken.duration === token.duration;
+                      
+                      // 如果与相邻音符时值相同，减小间距
+                      const spacingClass = (hasSameDurationBefore || hasSameDurationAfter) ? '-mx-1' : '';
+                      
                       return (
-                        <div key={tokenIdx} className="flex flex-col items-center group relative min-w-[2em]">
+                        <div key={tokenIdx} className={`flex flex-col items-center group relative min-w-[2em] ${spacingClass}`}>
                           {/* Jianpu Number */}
-                          <div className="font-bold font-serif mb-4 relative pb-2">
+                          <div className="font-bold font-mono mb-5 relative pb-3">
                             {token.octave === 'high' && (
                               <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-slate-800"></div>
                             )}
@@ -375,11 +385,18 @@
                                     </span>
                                 )}
                                 {token.val}
-                                {/* Duration underlines */}
+                                {/* Duration underlines - 连接相同时值的音符 */}
                                 {token.duration > 0 && (
-                                  <span className="absolute -bottom-2 left-0 right-0 flex flex-col gap-[2px]">
+                                  <span className="absolute -bottom-3 left-0 right-0 flex flex-col gap-[2px]">
                                     {[...Array(token.duration)].map((_, idx) => (
-                                      <span key={idx} className="block h-[2px] bg-slate-800"></span>
+                                      <span 
+                                        key={idx} 
+                                        className={`block h-[2px] bg-slate-800 ${
+                                          hasSameDurationBefore ? '-ml-4' : ''
+                                        } ${
+                                          hasSameDurationAfter ? '-mr-4' : ''
+                                        }`}
+                                      ></span>
                                     ))}
                                   </span>
                                 )}
