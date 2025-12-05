@@ -505,11 +505,26 @@
                   currentFontSizePx = 18;
                 }
                 
-                const gapPx = 8; // gap-x-2 is 0.5rem = 8px
+                // Dynamic Gap Calculation
+                const baseGap = 16; // Start with a wider gap
+                const reductionThreshold = 10; // Start reducing after this many elements
+                const reductionRate = 0.8; // Pixels to remove per extra element
+                let dynamicGap = baseGap;
+                
+                if (noteCount > reductionThreshold) {
+                    dynamicGap = Math.max(2, baseGap - (noteCount - reductionThreshold) * reductionRate);
+                }
+
+                const gapPx = dynamicGap;
                 const gapEm = gapPx / currentFontSizePx;
                 
+                // Determine alignment: justify-between if full line, justify-start otherwise
+                const barCount = line.filter(t => t.type === 'barline').length;
+                const isFullLine = barCount === barsPerLine;
+                const justifyClass = isFullLine ? 'justify-between' : 'justify-start';
+
                 return (
-                <div key={lineIdx} className={`flex items-end gap-x-2 mb-6 leading-none relative ${scaleClass}`} style={{ paddingTop: '40px' }}>
+                <div key={lineIdx} className={`flex items-end mb-6 leading-none relative ${scaleClass} ${justifyClass}`} style={{ paddingTop: '40px', gap: `${dynamicGap}px` }}>
                   {line.map((token, tokenIdx) => {
                     
                     // Handle slur markers
