@@ -479,22 +479,26 @@
                 let scaleClass = 'text-xl';
                 let holeSize = 'w-3 h-3';
                 let barHeight = 'h-20';
+                let whistleHeightPx = 90; // Default height for w-3 h-3 (12px*6 + 2px*5 + 4px*2)
                 let currentFontSizePx = 20; // Default text-xl (1.25rem * 16px)
                 
                 if (noteCount > 25) {
                   scaleClass = 'text-sm';
                   holeSize = 'w-2 h-2';
                   barHeight = 'h-12';
+                  whistleHeightPx = 66; // w-2 h-2 (8px*6 + 2px*5 + 4px*2)
                   currentFontSizePx = 14;
                 } else if (noteCount > 18) {
                   scaleClass = 'text-base';
                   holeSize = 'w-2.5 h-2.5';
                   barHeight = 'h-16';
+                  whistleHeightPx = 78; // w-2.5 h-2.5 (10px*6 + 2px*5 + 4px*2)
                   currentFontSizePx = 16;
                 } else if (noteCount > 12) {
                   scaleClass = 'text-lg';
                   holeSize = 'w-2.5 h-2.5';
                   barHeight = 'h-18';
+                  whistleHeightPx = 78;
                   currentFontSizePx = 18;
                 }
                 
@@ -652,8 +656,22 @@
 
                     if (token.type === 'barline') {
                        return (
-                        <div key={tokenIdx} className="flex flex-col items-center justify-center min-w-[0.5em] mx-2">
-                          <div className={`bg-slate-800 w-[2.5px] ${barHeight}`}></div>
+                        <div key={tokenIdx} className="flex flex-col items-center justify-end mx-1">
+                          {/* Jianpu Barline */}
+                          <div className="mb-5 pb-3 flex items-end justify-center">
+                             <div className="bg-slate-800 w-[2px] h-6 rounded-full"></div>
+                          </div>
+
+                          {/* Whistle Barline */}
+                          <div className="py-1 flex items-center justify-center">
+                             <div 
+                                className="bg-slate-800 w-[2px] rounded-full"
+                                style={{ height: `${whistleHeightPx}px` }}
+                             ></div>
+                          </div>
+                          
+                          {/* Note Name Spacer */}
+                          <div className="mt-1 text-xs opacity-0 select-none">|</div>
                         </div>
                        )
                     }
