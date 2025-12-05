@@ -518,14 +518,16 @@
                       const holes = getFingering(token);
                       const noteName = getNoteName(token);
                       
-                      // 检查是否与前一个音符时值相同（用于连接下划线）
+                      // Check for beam connections (Eighth/Sixteenth notes)
                       const prevToken = tokenIdx > 0 ? line[tokenIdx - 1] : null;
                       const nextToken = tokenIdx < line.length - 1 ? line[tokenIdx + 1] : null;
-                      const hasSameDurationBefore = prevToken?.type === 'note' && prevToken.duration > 0 && prevToken.duration === token.duration;
-                      const hasSameDurationAfter = nextToken?.type === 'note' && nextToken.duration > 0 && nextToken.duration === token.duration;
                       
-                      // 如果与相邻音符时值相同，减小间距
-                      const spacingClass = (hasSameDurationBefore || hasSameDurationAfter) ? '-mx-1' : '';
+                      // Connect if adjacent note has at least one underline (duration > 0)
+                      const connectsLeft = prevToken?.type === 'note' && prevToken.duration > 0 && token.duration > 0;
+                      const connectsRight = nextToken?.type === 'note' && nextToken.duration > 0 && token.duration > 0;
+                      
+                      // Reduce spacing if connected to any side
+                      const spacingClass = (connectsLeft || connectsRight) ? '-mx-1' : '';
                       
                       // Check if this is the first note in a slur group - render slur
                       let slurWidth = 0;
@@ -556,9 +558,9 @@
                             else if (t2.type === 'text') w2 = 1;
                             
                             let currentGap = gapEm;
-                            // Check for compact spacing (same duration notes)
+                            // Check for compact spacing (connected beams)
                             if (t1.type === 'note' && t2.type === 'note' && 
-                                t1.duration > 0 && t1.duration === t2.duration) {
+                                t1.duration > 0 && t2.duration > 0) {
                                 currentGap = 0; // -mx-1 cancels gap
                             }
                             
@@ -604,20 +606,52 @@
                                     </span>
                                 )}
                                 {token.val}
-                                {/* Duration underlines - 连接相同时值的音符 */}
+                                {/* Duration underlines - SVG (bottom-up per-line rendering) */}
                                 {token.duration > 0 && (
-                                  <span className="absolute -bottom-3 left-0 right-0 flex flex-col gap-[2px]">
-                                    {[...Array(token.duration)].map((_, idx) => (
-                                      <span 
-                                        key={idx} 
-                                        className={`block h-[2px] bg-slate-800 ${
-                                          hasSameDurationBefore ? '-ml-4' : ''
-                                        } ${
-                                          hasSameDurationAfter ? '-mr-4' : ''
-                                        }`}
-                                      ></span>
-                                    ))}
-                                  </span>
+                                  (() => {
+                                    const connectsLeftAny = prevToken?.type === 'note' && prevToken.duration > 0;
+                                    const extendLeft = connectsLeftAny ? 24 : 0; // viewBox units to extend left when linking
+                                    const svgWidth = extendLeft + 16;
+                                    const svgHeight = 10;
+                                    const baseY = 8; // bottom baseline in viewBox
+                                    const gap = 3; // spacing between lines
+                                    return (
+                                      <svg
+                                        className="absolute pointer-events-none"
+                                        style={{
+                                          left: connectsLeftAny ? '-2em' : '50%',
+                                          transform: connectsLeftAny ? 'none' : 'translateX(-50%)',
+                                          bottom: '-12px',
+                                          width: connectsLeftAny ? '3em' : '1em',
+                                          height: `${svgHeight}px`
+                                        }}
+                                        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+                                        preserveAspectRatio="none"
+                                      >
+                                        {Array.from({ length: token.duration }).map((_, i) => {
+                                          // i = 0 -> bottom line, i increases upward
+                                          const bottomIndex = i;
+                                          const y = baseY - bottomIndex * gap;
+                                          const linkLeft = prevToken?.type === 'note' && prevToken.duration > bottomIndex;
+                                          // start at 0 if linking left; otherwise start after the left extended area
+                                          const startX = linkLeft ? 0 : extendLeft;
+                                          const endX = svgWidth; 
+                                          return (
+                                            <line
+                                              key={i}
+                                              x1={startX}
+                                              y1={y}
+                                              x2={endX}
+                                              y2={y}
+                                              stroke="rgb(30,41,59)"
+                                              strokeWidth="2"
+                                              strokeLinecap="butt"
+                                            />
+                                          );
+                                        })}
+                                      </svg>
+                                    );
+                                  })()
                                 )}
                             </span>
                             
@@ -656,7 +690,7 @@
 
                     if (token.type === 'barline') {
                        return (
-                        <div key={tokenIdx} className="flex flex-col items-center justify-end mx-1">
+                        <div key={tokenIdx} className="flex flex-col items-center justify-end mx0">
                           {/* Jianpu Barline */}
                           <div className="mb-5 pb-3 flex items-end justify-center">
                              <div className="bg-slate-800 w-[2px] h-6 rounded-full"></div>
