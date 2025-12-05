@@ -233,8 +233,8 @@
           parsedTokens.push({ type: 'barline' });
         } else {
           // Enhanced Regex: (accidental)(note)(accidental)(modifiers)(slashes)
-          // Matches: 1, 1+, 1#, #1, 7b, b7, 5/, 5//, 5///
-          const match = cleanToken.match(/^([#b]?)?([1-7])([#b]?)?([+'_]*)?(\/{0,3})?$/);
+          // Matches: 1, 1+, 1#, #1, 7b, b7, 5/, 5//, 5///, 5-
+          const match = cleanToken.match(/^([#b]?)?([1-7])([#b]?)?([+'_-]*)?(\/{0,3})?$/);
           
           if (match) {
             const preAcc = match[1];
@@ -250,7 +250,10 @@
             if (mods.includes('+') || mods.includes("'")) octave = 'high';
             else if (mods.includes('_')) octave = 'low';
             
-            parsedTokens.push({ type: 'note', val: note, octave, accidental, duration, original: token });
+            // Check for bass dot modifier '-'
+            const hasBassDot = mods.includes('-');
+
+            parsedTokens.push({ type: 'note', val: note, octave, accidental, duration, hasBassDot, original: token });
           } else {
             parsedTokens.push({ type: 'text', content: cleanToken });
           }
@@ -634,8 +637,9 @@
                                           const y = baseY - bottomIndex * gap;
                                           const linkLeft = prevToken?.type === 'note' && prevToken.duration > bottomIndex;
                                           // start at 0 if linking left; otherwise start after the left extended area
-                                          const startX = linkLeft ? 0 : extendLeft;
-                                          const endX = svgWidth; 
+                                          // Shorten the line slightly on both sides for unconnected lines
+                                          const startX = linkLeft ? 0 : extendLeft + 2; 
+                                          const endX = svgWidth - 2; 
                                           return (
                                             <line
                                               key={i}
@@ -644,7 +648,7 @@
                                               x2={endX}
                                               y2={y}
                                               stroke="rgb(30,41,59)"
-                                              strokeWidth="2"
+                                              strokeWidth="1.5"
                                               strokeLinecap="butt"
                                             />
                                           );
@@ -652,6 +656,14 @@
                                       </svg>
                                     );
                                   })()
+                                )}
+                                
+                                {/* Bass Dot (Low Octave Indicator below underlines) */}
+                                {token.hasBassDot && (
+                                  <div 
+                                    className="absolute left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-slate-800" 
+                                    style={{ bottom: `-${20 + (token.octave === 'low' ? 10 : 0)}px` }}
+                                  ></div>
                                 )}
                             </span>
                             
