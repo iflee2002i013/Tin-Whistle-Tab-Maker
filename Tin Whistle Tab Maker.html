@@ -356,26 +356,55 @@
                     slurEl.style.left = `calc(50% + ${leftOffset}px)`;
 
                     // Generate Path Data
-                    const h = 15; // Arch height
+                    const h = 15; // Arch height (y=15 is bottom, y=0 is top)
                     const w = width;
                     let d = '';
 
+                    // Cubic Bezier (C) for "bracket-like" shape: High curvature at ends, flat in middle
+                    // Format: M startX startY C cp1x cp1y, cp2x cp2y, endX endY
+                    
+                    // Adjust these factors to change shape:
+                    // 0.2 (1/5) means the curve starts turning quickly (flatter middle).
+                    // 0.33 (1/3) would be rounder.
+                    // 0.1 would be very square.
+                    const curveFactor = 0.2; 
+
                     if (group.isIncoming && group.isOutgoing) {
-                        // Middle segment: starts high, ends high
-                        d = `M 0 5 Q ${w/2} 0 ${w} 5`;
+                        // Middle segment: connects two flat extensions
+                        // Variable thickness: Top y=2, Bottom y=4
+                        const outer = `M 0 2 C ${w * 0.25} 0, ${w * 0.75} 0, ${w} 2`;
+                        const inner = `L ${w} 4 C ${w * 0.75} 2, ${w * 0.25} 2, 0 4`;
+                        d = `${outer} ${inner} Z`;
                     } else if (group.isIncoming) {
-                        // Incoming: Starts high (left), ends low (right)
-                        d = `M 0 5 Q ${w * 0.4} 0 ${w} ${h}`;
+                        // Incoming: Starts flat-ish (left), curves down to note (right)
+                        // Start thickness: y=2 to y=4
+                        const outer = `M 0 2 C ${w * 0.2} 0, ${w * 0.8} 0, ${w} ${h}`;
+                        const inner = `C ${w * 0.8} 2, ${w * 0.2} 2, 0 4`;
+                        d = `${outer} ${inner} Z`;
                     } else if (group.isOutgoing) {
-                        // Outgoing: Starts low (left), ends high (right)
-                        d = `M 0 ${h} Q ${w * 0.6} 0 ${w} 5`;
+                        // Outgoing: Curves up from note (left), ends flat-ish (right)
+                        // End thickness: y=2 to y=4
+                        const outer = `M 0 ${h} C ${w * 0.2} 0, ${w * 0.8} 0, ${w} 2`;
+                        const inner = `L ${w} 4 C ${w * 0.8} 2, ${w * 0.2} 2, 0 ${h}`;
+                        d = `${outer} ${inner} Z`;
                     } else {
-                        // Full arch
-                        d = `M 0 ${h} Q ${w/2} 0 ${w} ${h}`;
+                        // Full arch: Note to Note
+                        // Control points at y=0 (top), spaced by curveFactor
+                        // Draw a closed shape to simulate variable thickness (crescent moon shape)
+                        // Top curve (outer)
+                        const outer = `M 0 ${h} C ${w * curveFactor} 0, ${w * (1 - curveFactor)} 0, ${w} ${h}`;
+                        // Bottom curve (inner) - slightly flatter/lower to create thickness in middle
+                        const inner = `C ${w * (1 - curveFactor)} 2, ${w * curveFactor} 2, 0 ${h}`;
+                        d = `${outer} ${inner} Z`;
                     }
                     
                     const pathEl = slurEl.querySelector('path');
-                    if (pathEl) pathEl.setAttribute('d', d);
+                    if (pathEl) {
+                        pathEl.setAttribute('d', d);
+                        // Apply fill to all shapes now
+                        pathEl.setAttribute('fill', 'rgb(71, 85, 105)');
+                        pathEl.setAttribute('stroke', 'none');
+                    }
                 }
             }
         });
