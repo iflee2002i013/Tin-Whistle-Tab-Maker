@@ -296,6 +296,72 @@
   const rawParsedLines = parseNotes(input);
   const parsedLines = reflowTokens(rawParsedLines.flat(), barsPerLine);
 
+  // Refs for layout calculation
+  const noteRefs = useRef({});
+  const slurRefs = useRef({});
+
+  // Recalculate slur widths based on actual DOM positions
+  const recalculateSlurs = () => {
+    parsedLines.forEach((line, lineIdx) => {
+        // Identify slur groups (logic duplicated from render to ensure sync)
+        const slurGroups = [];
+        let currentSlurGroup = null;
+        
+        line.forEach((token, idx) => {
+            if (token.type === 'slur-start') {
+            currentSlurGroup = { start: idx, notes: [] };
+            } else if (token.type === 'slur-end') {
+            if (currentSlurGroup) {
+                currentSlurGroup.end = idx;
+                slurGroups.push(currentSlurGroup);
+                currentSlurGroup = null;
+            }
+            } else if (token.type === 'note' && currentSlurGroup) {
+            currentSlurGroup.notes.push(idx);
+            }
+        });
+
+        slurGroups.forEach(group => {
+            if (group.notes.length > 1) {
+                const firstIdx = group.notes[0];
+                const lastIdx = group.notes[group.notes.length - 1];
+                
+                const startEl = noteRefs.current[`${lineIdx}-${firstIdx}`];
+                const endEl = noteRefs.current[`${lineIdx}-${lastIdx}`];
+                const slurEl = slurRefs.current[`${lineIdx}-${firstIdx}`];
+
+                if (startEl && endEl && slurEl) {
+                    // Calculate distance between centers
+                    // Since elements are centered in flex cols, and we want center-to-center
+                    // offsetLeft gives the left edge relative to the parent (the line container)
+                    // But wait, the parent is the line container?
+                    // Yes, note divs are direct children of the line div.
+                    
+                    // Center of start = startEl.offsetLeft + startEl.offsetWidth / 2
+                    // Center of end = endEl.offsetLeft + endEl.offsetWidth / 2
+                    // Width = CenterEnd - CenterStart
+                    
+                    const startCenter = startEl.offsetLeft + startEl.offsetWidth / 2;
+                    const endCenter = endEl.offsetLeft + endEl.offsetWidth / 2;
+                    const width = endCenter - startCenter;
+                    
+                    slurEl.style.width = `${width}px`;
+                }
+            }
+        });
+    });
+  };
+
+  // Update slurs on render and resize
+  React.useLayoutEffect(() => {
+    recalculateSlurs();
+  });
+
+  useEffect(() => {
+    window.addEventListener('resize', recalculateSlurs);
+    return () => window.removeEventListener('resize', recalculateSlurs);
+  }, [parsedLines]); // Re-bind if parsedLines changes (though logic uses closure)
+
   const getFingering = (token) => {
     let noteVal = token.val;
     let acc = token.accidental;
@@ -589,16 +655,18 @@
                       return (
                         <div 
                           key={tokenIdx} 
+                          ref={el => noteRefs.current[`${lineIdx}-${tokenIdx}`] = el}
                           className={`flex flex-col items-center group relative min-w-[2em] ${spacingClass}`}
                         >
                           {/* Slur line using CSS */}
                           {slurWidth > 0 && (
                             <div 
+                              ref={el => slurRefs.current[`${lineIdx}-${tokenIdx}`] = el}
                               className="absolute pointer-events-none"
                               style={{
                                 top: '-35px',
                                 left: '50%',
-                                width: `${slurWidth}em`,
+                                width: `${slurWidth}em`, // Fallback width
                                 height: '25px',
                                 borderTop: '2px solid rgb(71, 85, 105)',
                                 borderRadius: '50%',

@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>简谱生成器</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @media print {
+      @page { margin: 1cm; }
+      body { -webkit-print-color-adjust: exact; background: white; }
+      .no-print { display: none !important; }
+    }
+    .jianpu-font { font-family: 'Courier New', Courier, monospace; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // 图标组件
+    const Printer = ({ className }) => (
+      <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+      </svg>
+    );
+
+    const Music = ({ className }) => (
+      <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+      </svg>
+    );
+
+    const Eraser = ({ className }) => (
+      <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+      </svg>
+    );
+
+    const JianpuMaker = () => {
+      const defaultText = `1 2 (3 5) | 6 5 3 2 | 1 1 0 0 |
+1+ 7 6 5 | 4# 5 6 0 |
+3 5/ 5// 5/// | 1 - - - |`;
+
+      const [input, setInput] = useState(defaultText);
+      const [barsPerLine, setBarsPerLine] = useState(4);
+
+      // 解析逻辑
+      const parseNotes = (text) => {
+        const processedText = text.replace(/\|/g, ' | ');
+        const lines = processedText.split('\n');
+        return lines.map((line) => {
+          const tokens = line.trim().split(/\s+/);
+          const parsedTokens = [];
+          
+          tokens.forEach(token => {
+            if (!token) return;
+            
+            let note = null;
+            let octave = 'middle';
+            let accidental = null;
+            let duration = 0;
+            
+            let cleanToken = token.trim();
+            
+            const startsSlur = cleanToken.startsWith('(');
+            const endsSlur = cleanToken.endsWith(')');
+            
+            cleanToken = cleanToken.replace(/[()]/g, '');
+            
+            if (!cleanToken) {
+              if (startsSlur) parsedTokens.push({ type: 'slur-start' });
+              if (endsSlur) parsedTokens.push({ type: 'slur-end' });
+              return;
+            }
+            
+            if (startsSlur) parsedTokens.push({ type: 'slur-start' });
+            
+            if (cleanToken === '0') {
+              parsedTokens.push({ type: 'rest' });
+            } else if (cleanToken === '-' || cleanToken === '~') {
+              parsedTokens.push({ type: 'sustain' });
+            } else if (cleanToken === '|') {
+              parsedTokens.push({ type: 'barline' });
+            } else {
+              // 匹配: (前缀升降)(音符)(后缀升降)(高低音)(时值下划线)
+              const match = cleanToken.match(/^([#b]?)?([1-7])([#b]?)?([+'_-]*)?(\/{0,3})?$/);
+              
+              if (match) {
+                const preAcc = match[1];
+                const val = match[2];
+                const postAcc = match[3];
+                const mods = match[4] || '';
+                const slashes = match[5] || '';
+                
+                note = val;
+                accidental = preAcc || postAcc || null;
+                duration = slashes.length;
+                
+                if (mods.includes('+')) octave = 'high';
+                else if (mods.includes('-') || mods.includes('_')) octave = 'low'; // 支持 - 或 _ 表示低音
+
+                parsedTokens.push({ type: 'note', val: note, octave, accidental, duration });
+              } else {
+                parsedTokens.push({ type: 'text', content: cleanToken });
+              }
+            }
+            
+            if (endsSlur) parsedTokens.push({ type: 'slur-end' });
+          });
+          
+          return parsedTokens.filter(Boolean);
+        });
+      };
+
+      // 重新排版逻辑
+      const reflowTokens = (tokens, barsCount) => {
+        const newLines = [];
+        let currentLine = [];
+        let barsInCurrentLine = 0;
+        let inSlur = false;
+
+        tokens.forEach(token => {
+            if (token.type === 'slur-start') inSlur = true;
+            if (token.type === 'slur-end') inSlur = false;
+
+            currentLine.push(token);
+
+            if (token.type === 'barline') {
+                barsInCurrentLine++;
+                if (barsInCurrentLine >= barsCount) {
+                    if (inSlur) currentLine.push({ type: 'slur-end' });
+                    newLines.push(currentLine);
+                    currentLine = [];
+                    barsInCurrentLine = 0;
+                    if (inSlur) currentLine.push({ type: 'slur-start' });
+                }
+            }
+        });
+
+        if (currentLine.length > 0) newLines.push(currentLine);
+        return newLines;
+      };
+
+      const rawParsedLines = parseNotes(input);
+      const parsedLines = reflowTokens(rawParsedLines.flat(), barsPerLine);
+
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
+          {/* 顶部导航 */}
+          <header className="bg-indigo-600 text-white p-4 shadow-md no-print">
+            <div className="max-w-6xl mx-auto flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Music className="w-6 h-6" />
+                <h1 className="text-xl font-bold">简谱生成器</h1>
+              </div>
+              <button 
+                onClick={() => window.print()}
+                className="flex items-center gap-2 bg-white text-indigo-800 px-4 py-2 rounded-lg hover:bg-indigo-50 transition font-medium shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+                打印 / 保存PDF
+              </button>
+            </div>
+          </header>
+
+          <div className="flex-1 flex flex-col md:flex-row max-w-7xl mx-auto w-full p-4 gap-6">
+            
+            {/* 输入区域 */}
+            <div className="w-full md:w-1/3 flex flex-col gap-4 no-print">
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col">
+                <div className="flex justify-between items-center mb-2">
+                  <h2 className="font-semibold text-slate-700">输入简谱代码</h2>
+                  <button 
+                    onClick={() => setInput('')}
+                    className="text-xs text-slate-500 hover:text-red-500 flex items-center gap-1"
+                  >
+                    <Eraser className="w-3 h-3" /> 清空
+                  </button>
+                </div>
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  className="w-full flex-1 p-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-lg resize-none outline-none h-96"
+                  placeholder="输入示例: 1 2 (3 5) | 6 5 3 2 |"
+                  spellCheck="false"
+                />
+                
+                <div className="mt-4 bg-indigo-50 p-3 rounded-lg text-sm text-indigo-900 border border-indigo-100">
+                  <div className="font-semibold mb-2">语法说明:</div>
+                  <ul className="space-y-1 list-disc list-inside opacity-90 text-xs">
+                    <li><code className="bg-white px-1 border rounded">1-7</code> : 音符</li>
+                    <li><code className="bg-white px-1 border rounded">+</code> / <code className="bg-white px-1 border rounded">-</code> : 高音/低音 (如 1+, 6-)</li>
+                    <li><code className="bg-white px-1 border rounded">#</code> / <code className="bg-white px-1 border rounded">b</code> : 升降号 (如 4#, 7b)</li>
+                    <li><code className="bg-white px-1 border rounded">/</code> : 减时线 (如 5/ 八分, 5// 十六分)</li>
+                    <li><code className="bg-white px-1 border rounded">()</code> : 连音线 (如 (3 5))</li>
+                    <li><code className="bg-white px-1 border rounded">0</code> : 休止符 | <code className="bg-white px-1 border rounded">~</code> : 延音</li>
+                    <li><code className="bg-white px-1 border rounded">|</code> : 小节线</li>
+                  </ul>
+                </div>
+
+                <div className="mt-4">
+                    <label className="text-sm text-slate-500 block mb-1">每行小节数</label>
+                    <div className="flex gap-2">
+                        {[3, 4, 5].map(num => (
+                            <button
+                                key={num}
+                                onClick={() => setBarsPerLine(num)}
+                                className={`flex-1 py-1.5 rounded-md text-sm border transition-colors ${
+                                barsPerLine === num
+                                ? 'bg-indigo-600 text-white border-indigo-600' 
+                                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                                }`}
+                            >
+                                {num}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 预览区域 */}
+            <div className="w-full md:w-2/3 bg-white shadow-lg rounded-xl overflow-hidden print:shadow-none print:w-full print:absolute print:top-0 print:left-0">
+              <div className="p-8 min-h-[600px]">
+                <div className="text-center mb-12 border-b border-slate-200 pb-4">
+                   <h1 className="text-3xl font-serif text-slate-800">简谱预览</h1>
+                </div>
+
+                <div className="space-y-12">
+                  {parsedLines.map((line, lineIdx) => {
+                    // 计算连音线组
+                    const slurGroups = [];
+                    let currentSlurGroup = null;
+                    
+                    line.forEach((token, idx) => {
+                      if (token.type === 'slur-start') {
+                        currentSlurGroup = { start: idx, notes: [] };
+                      } else if (token.type === 'slur-end') {
+                        if (currentSlurGroup) {
+                          currentSlurGroup.end = idx;
+                          slurGroups.push(currentSlurGroup);
+                          currentSlurGroup = null;
+                        }
+                      } else if (token.type === 'note' && currentSlurGroup) {
+                        currentSlurGroup.notes.push(idx);
+                      }
+                    });
+                    
+                    // 动态间距计算
+                    const noteCount = line.filter(t => t.type === 'note' || t.type === 'barline' || t.type === 'rest' || t.type === 'sustain').length;
+                    const isFullLine = line.filter(t => t.type === 'barline').length === barsPerLine;
+                    const justifyClass = isFullLine ? 'justify-between' : 'justify-start';
+                    
+                    // 基础字体大小
+                    const fontSizeClass = noteCount > 20 ? 'text-2xl' : 'text-3xl';
+                    const gapClass = isFullLine ? '' : 'gap-8';
+
+                    return (
+                    <div key={lineIdx} className={`flex items-end mb-8 leading-none relative ${fontSizeClass} ${justifyClass} ${gapClass}`} style={{ paddingTop: '30px' }}>
+                      {line.map((token, tokenIdx) => {
+                        if (token.type === 'slur-start' || token.type === 'slur-end') return null;
+                        
+                        if (token.type === 'note') {
+                          // 检查是否需要连接减时线
+                          const prevToken = tokenIdx > 0 ? line[tokenIdx - 1] : null;
+                          const nextToken = tokenIdx < line.length - 1 ? line[tokenIdx + 1] : null;
+                          const connectsLeft = prevToken?.type === 'note' && prevToken.duration > 0 && token.duration > 0;
+                          const connectsRight = nextToken?.type === 'note' && nextToken.duration > 0 && token.duration > 0;
+                          const spacingClass = (connectsLeft || connectsRight) ? '-mx-1' : 'mx-1';
+                          
+                          // 连音线绘制逻辑
+                          let slurWidth = 0;
+                          slurGroups.forEach(group => {
+                            if (group.notes[0] === tokenIdx && group.notes.length > 1) {
+                              // 简单估算宽度，实际项目中可能需要更精确的 DOM 测量
+                              // 这里假设每个音符大约占据一定宽度
+                              const count = group.notes.length;
+                              slurWidth = count * 1.5 + (count - 1) * 0.5; // 粗略估算
+                            }
+                          });
+                          
+                          return (
+                            <div key={tokenIdx} className={`flex flex-col items-center group relative min-w-[1.2em] ${spacingClass}`}>
+                              {/* 连音线 (CSS 模拟) - 仅在连音组第一个音符处渲染 */}
+                              {slurGroups.some(g => g.notes[0] === tokenIdx) && (
+                                (() => {
+                                    const group = slurGroups.find(g => g.notes[0] === tokenIdx);
+                                    const noteCount = group.notes.length;
+                                    // 动态计算宽度：基于音符数量
+                                    // 这是一个近似值，对于变宽字体可能不完美
+                                    const widthPercent = noteCount * 100 + (noteCount - 1) * 50; 
+                                    
+                                    return (
+                                        <div 
+                                        className="absolute pointer-events-none"
+                                        style={{
+                                            top: '-0.8em',
+                                            left: '50%',
+                                            width: `${widthPercent}%`, // 覆盖后续音符
+                                            height: '0.5em',
+                                            borderTop: '2px solid #333',
+                                            borderRadius: '50%',
+                                            transform: 'translateX(-10%)', // 微调位置
+                                            zIndex: 0
+                                        }}
+                                        />
+                                    );
+                                })()
+                              )}
+                              
+                              <div className="font-bold font-mono relative">
+                                {/* 高音点 */}
+                                {token.octave === 'high' && (
+                                  <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-slate-800"></div>
+                                )}
+                                
+                                {/* 升降号 */}
+                                {token.accidental && (
+                                    <span className="absolute -left-3 top-0 text-sm scale-75 font-normal opacity-80">
+                                        {token.accidental}
+                                    </span>
+                                )}
+                                
+                                {token.val}
+
+                                {/* 减时线 (SVG) */}
+                                {token.duration > 0 && (
+                                  <svg
+                                    className="absolute pointer-events-none"
+                                    style={{
+                                      left: connectsLeft ? '-50%' : '0',
+                                      width: (connectsLeft || connectsRight) ? '200%' : '100%',
+                                      bottom: '-0.4em',
+                                      height: '0.5em',
+                                      zIndex: -1
+                                    }}
+                                    viewBox="0 0 100 20"
+                                    preserveAspectRatio="none"
+                                  >
+                                    {Array.from({ length: token.duration }).map((_, i) => (
+                                      <line
+                                        key={i}
+                                        x1="0" y1={18 - i * 6}
+                                        x2="100" y2={18 - i * 6}
+                                        stroke="currentColor"
+                                        strokeWidth="8"
+                                      />
+                                    ))}
+                                  </svg>
+                                )}
+                                
+                                {/* 低音点 */}
+                                {token.octave === 'low' && (
+                                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-slate-800"></div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (token.type === 'barline') {
+                           return (
+                            <div key={tokenIdx} className="flex flex-col items-center justify-end mx-2">
+                               <div className="bg-slate-800 w-[2px] h-12"></div>
+                            </div>
+                           )
+                        }
+
+                        if (token.type === 'rest') {
+                           return (
+                            <div key={tokenIdx} className="flex flex-col items-center justify-end min-w-[1em] mx-1">
+                              <span className="font-bold text-slate-800">0</span>
+                            </div>
+                           )
+                        }
+
+                        if (token.type === 'sustain') {
+                           return (
+                            <div key={tokenIdx} className="flex flex-col items-center justify-end min-w-[1em] mx-1">
+                              <span className="font-bold text-slate-800">—</span>
+                            </div>
+                           )
+                        }
+
+                        return (
+                           <div key={tokenIdx} className="flex flex-col items-center justify-end min-w-[1em] mx-1">
+                              <span className="text-slate-600 text-lg">{token.content}</span>
+                            </div>
+                        )
+                      })}
+                    </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<JianpuMaker />);
+  </script>
+</body>
+</html>
