@@ -188,7 +188,11 @@
   // Parser Logic
   const parseNotes = (text) => {
     // Pre-process to ensure barlines are separated
-    const processedText = text.replace(/\|/g, ' | ');
+    // Handle double barline || first to avoid splitting it into | |
+    let processedText = text.replace(/\|\|/g, ' __DBL__ ');
+    processedText = processedText.replace(/\|/g, ' | ');
+    processedText = processedText.replace(/__DBL__/g, ' || ');
+
     const lines = processedText.split('\n');
     return lines.map((line) => {
       const tokens = line.trim().split(/\s+/);
@@ -227,6 +231,8 @@
           parsedTokens.push({ type: 'rest' });
         } else if (cleanToken === '-' || cleanToken === '~') {
           parsedTokens.push({ type: 'sustain' });
+        } else if (cleanToken === '||') {
+          parsedTokens.push({ type: 'final-barline' });
         } else if (cleanToken === '|') {
           parsedTokens.push({ type: 'barline' });
         } else {
@@ -277,7 +283,7 @@
 
         currentLine.push(token);
 
-        if (token.type === 'barline') {
+        if (token.type === 'barline' || token.type === 'final-barline') {
             barsInCurrentLine++;
             if (barsInCurrentLine >= barsCount) {
                 if (inSlur) currentLine.push({ type: 'slur-end', isContinuation: true });
@@ -600,7 +606,7 @@
                 });
                 
                 // Count visible elements in this line
-                const noteCount = line.filter(t => t.type === 'note' || t.type === 'barline' || t.type === 'rest' || t.type === 'sustain').length;
+                const noteCount = line.filter(t => t.type === 'note' || t.type === 'barline' || t.type === 'final-barline' || t.type === 'rest' || t.type === 'sustain').length;
                 
                 // Calculate scale based on note count (adjust to fit viewport)
                 let scaleClass = 'text-xl';
@@ -643,7 +649,7 @@
                 const gapEm = gapPx / currentFontSizePx;
                 
                 // Determine alignment: justify-between if full line, justify-start otherwise
-                const barCount = line.filter(t => t.type === 'barline').length;
+                const barCount = line.filter(t => t.type === 'barline' || t.type === 'final-barline').length;
                 const isFullLine = barCount === barsPerLine;
                 const justifyClass = isFullLine ? 'justify-between' : 'justify-start';
 
@@ -669,7 +675,9 @@
                       const connectsRight = nextToken?.type === 'note' && nextToken.duration > 0 && token.duration > 0;
                       
                       // Reduce spacing if connected to any side
-                      const spacingClass = (connectsLeft || connectsRight) ? '-mx-1' : '';
+                      const isConnected = connectsLeft || connectsRight;
+                      const spacingClass = isConnected ? '-mx-1.5' : '';
+                      const minWidthClass = isConnected ? 'min-w-[1.6em]' : 'min-w-[2em]';
                       
                       // Check if this is the first note in a slur group - render slur
                       let slurType = null;
@@ -687,7 +695,7 @@
                         <div 
                           key={tokenIdx} 
                           ref={el => noteRefs.current[`${lineIdx}-${tokenIdx}`] = el}
-                          className={`flex flex-col items-center group relative min-w-[2em] ${spacingClass}`}
+                          className={`flex flex-col items-center group relative ${minWidthClass} ${spacingClass}`}
                         >
                           {/* Slur line using SVG */}
                           {slurType && (
@@ -740,10 +748,10 @@
                                       <svg
                                         className="absolute pointer-events-none"
                                         style={{
-                                          left: connectsLeftAny ? '-2em' : '50%',
+                                          left: connectsLeftAny ? '-1.5em' : '50%',
                                           transform: connectsLeftAny ? 'none' : 'translateX(-50%)',
                                           bottom: '-12px',
-                                          width: connectsLeftAny ? '3em' : '1em',
+                                          width: connectsLeftAny ? '2.5em' : '1em',
                                           height: `${svgHeight}px`
                                         }}
                                         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
@@ -840,6 +848,33 @@
                        )
                     }
 
+                    if (token.type === 'final-barline') {
+                       return (
+                        <div key={tokenIdx} className="flex flex-col items-center justify-end mx-0">
+                          {/* Jianpu Final Barline */}
+                          <div className="mb-5 pb-3 flex items-end justify-center gap-1">
+                             <div className="bg-slate-800 w-[2px] h-6"></div>
+                             <div className="bg-slate-800 w-[5px] h-6 rounded-sm"></div>
+                          </div>
+
+                          {/* Whistle Final Barline */}
+                          <div className="py-1 flex items-center justify-center gap-1">
+                             <div 
+                                className="bg-slate-800 w-[2px]"
+                                style={{ height: `${whistleHeightPx}px` }}
+                             ></div>
+                             <div 
+                                className="bg-slate-800 w-[5px] rounded-sm"
+                                style={{ height: `${whistleHeightPx}px` }}
+                             ></div>
+                          </div>
+                          
+                          {/* Note Name Spacer */}
+                          <div className="mt-1 text-xs opacity-0 select-none">||</div>
+                        </div>
+                       )
+                    }
+
                     if (token.type === 'rest') {
                        return (
                         <div key={tokenIdx} className="flex flex-col items-center justify-end min-w-[1.5em] pb-1">
@@ -851,7 +886,18 @@
                     if (token.type === 'sustain') {
                        return (
                         <div key={tokenIdx} className="flex flex-col items-center justify-end min-w-[1em] pb-1">
-                          <span className="font-bold text-slate-400 mb-10">—</span>
+                          {/* Jianpu Sustain */}
+                          <div className="mb-5 pb-3 flex items-end justify-center">
+                             <span className="font-bold text-slate-800 text-xl translate-y-1.5">–</span>
+                          </div>
+
+                          {/* Whistle Sustain - Centered Dash */}
+                          <div className="py-1 flex items-center justify-center" style={{ height: `${whistleHeightPx}px` }}>
+                             <span className="text-slate-300 font-bold text-xl">–</span>
+                          </div>
+                          
+                          {/* Spacer */}
+                          <div className="mt-1 text-xs opacity-0 select-none">-</div>
                         </div>
                        )
                     }
